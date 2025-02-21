@@ -20,10 +20,17 @@ module Datapath #(
     Branch,  // Branch Enable
     input  logic [          1:0] ALUOp,
     input  logic [ALU_CC_W -1:0] ALU_CC,         // ALU Control Code ( input of the ALU )
+
+    input  logic JalSel,
+    input  logic JalrSel,
+
     output logic [          6:0] opcode,
     output logic [          6:0] Funct7,
     output logic [          2:0] Funct3,
     output logic [          1:0] ALUOp_Current,
+
+    output logic JalSelB,
+
     output logic [   DATA_W-1:0] WB_Data,        //Result After the last MUX
 
     // Para depuração no tesbench:
@@ -42,7 +49,9 @@ module Datapath #(
   logic [INS_W-1:0] Instr;
   logic [DATA_W-1:0] Reg1, Reg2;
   logic [DATA_W-1:0] ReadData;
-  logic [DATA_W-1:0] SrcB, ALUResult;
+
+  logic [DATA_W-1:0]  PC_B, PC_Bplus, SrcA, SrcB, ALUResult;
+  
   logic [DATA_W-1:0] ExtImm, BrImm, Old_PC_Four, BrPC;
   logic [DATA_W-1:0] WrmuxSrc;
   logic PcSel;  // mux select / flush signal
@@ -141,6 +150,10 @@ module Datapath #(
       B.MemWrite <= 0;
       B.ALUOp <= 0;
       B.Branch <= 0;
+
+      B.JalSel <= 0;
+      B.JalrSel <= 0;
+
       B.Curr_Pc <= 0;
       B.RD_One <= 0;
       B.RD_Two <= 0;
@@ -159,6 +172,10 @@ module Datapath #(
       B.MemWrite <= MemWrite;
       B.ALUOp <= ALUOp;
       B.Branch <= Branch;
+
+      B.JalSel <= JalSel;
+      B.JalrSel <= JalrSel;
+
       B.Curr_Pc <= A.Curr_Pc;
       B.RD_One <= Reg1;
       B.RD_Two <= Reg2;
@@ -189,6 +206,9 @@ module Datapath #(
   assign Funct3 = B.func3;
   assign ALUOp_Current = B.ALUOp;
 
+  assign PC_B = {23'b0,B.Curr_Pc}; 
+  assign JalSelB = B.JalSel;
+
   mux4 #(32) FAmux (
       B.RD_One,
       WrmuxSrc,
@@ -205,6 +225,20 @@ module Datapath #(
       FBmuxSel,
       FBmux_Result
   );
+
+  adder #(9) pcaddb(
+      PC_B,
+      9'b100,
+      PC_Bplus
+  ); 
+	
+  mux2 #(32) srcamux (
+      FAmux_Result,
+      PC_Bplus,
+      B.JalSel,
+      SrcA
+  );
+
   mux2 #(32) srcbmux (
       FBmux_Result,
       B.ImmG,
@@ -212,7 +246,7 @@ module Datapath #(
       SrcB
   );
   alu alu_module (
-      FAmux_Result,
+      SrcA,
       SrcB,
       ALU_CC,
       ALUResult
@@ -221,6 +255,11 @@ module Datapath #(
       B.Curr_Pc,
       B.ImmG,
       B.Branch,
+
+      B.JalSel,
+      B.JalrSel,
+      FAmux_Result,
+
       ALUResult,
       BrImm,
       Old_PC_Four,
